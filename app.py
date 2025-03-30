@@ -6,12 +6,9 @@ import mysecret as mysecret
 
 app = Flask(__name__)
 openai_api_key = os.getenv('OPENAI_API_KEY')
-try:
-    if not openai_api_key:
-        raise ValueError("OPENAI_API_KEY environment variable not set")
-except Exception as e:
-    openai_api_key = mysecret.OPENAI_API_KEY
-    print(e)
+if not openai_api_key:
+    raise ValueError("OPENAI_API_KEY environment variable not set")
+
     
 client = openai.OpenAI(api_key=openai_api_key)
 
@@ -112,5 +109,5 @@ def translate():
     return jsonify({"translatedText": translated_text})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()
 
