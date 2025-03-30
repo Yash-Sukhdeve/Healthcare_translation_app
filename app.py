@@ -1,10 +1,12 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, jsonify, render_template, request
+from flask_cors import CORS  # Add this import
 import openai
 import os
 import tempfile
 import mysecret as mysecret
 
 app = Flask(__name__)
+CORS(app) 
 openai_api_key = os.getenv('OPENAI_API_KEY')
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable not set")

@@ -1,19 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Add these meta tags for better mobile experience -->
-<meta name="theme-color" content="#ffffff">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-<!-- Add a favicon -->
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🩺</text></svg>">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Healthcare Translation App</title>
-  <!-- Bootstrap CSS via CDN -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <!-- Google Fonts for a clean look -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600&display=swap" rel="stylesheet">
@@ -47,6 +42,15 @@
       width: 100%;
       margin-top: 10px;
     }
+    .status-indicator {
+      display: none;
+      margin: 10px 0;
+      text-align: center;
+    }
+    .error-message {
+      color: #dc3545;
+      font-weight: 600;
+    }
     @media (max-width: 576px) {
       body {
         padding: 10px;
@@ -65,9 +69,17 @@
   <div class="section text-center">
     <h3>Record Audio</h3>
     <button id="recordButton" class="btn btn-primary btn-custom">Record</button>
-    <br><br>
+    <div id="recordingStatus" class="status-indicator">
+      <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+      <span>Recording in progress...</span>
+    </div>
+    <div id="uploadStatus" class="status-indicator">
+      <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+      <span>Processing audio...</span>
+    </div>
+    <div id="recordingError" class="error-message"></div>
+    <br>
     <audio id="audioPlayback" controls></audio>
-    
   </div>
   
   <!-- Transcription Display -->
@@ -91,11 +103,14 @@
       <option value="Italian">Italian</option>
       <option value="Arabic">Arabic</option>
       <option value="Korean">Korean</option>
-
-      <!-- More languages as needed -->
     </select>
     <br>
     <button id="translateButton" class="btn btn-info btn-custom">Translate</button>
+    <div id="translationStatus" class="status-indicator">
+      <div class="spinner-border spinner-border-sm text-info" role="status"></div>
+      <span>Translating...</span>
+    </div>
+    <div id="translationError" class="error-message"></div>
   </div>
   
   <!-- Translated Transcript Display -->
@@ -108,7 +123,6 @@
   </div>
 </div>
 
-<!-- Bootstrap Bundle with Popper -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
   let mediaRecorder;
@@ -124,79 +138,147 @@
   const languageSelect = document.getElementById("languageSelect");
   const translatedText = document.getElementById("translatedText");
   const speakButton = document.getElementById("speakButton");
+  const recordingStatus = document.getElementById("recordingStatus");
+  const uploadStatus = document.getElementById("uploadStatus");
+  const translationStatus = document.getElementById("translationStatus");
+  const recordingError = document.getElementById("recordingError");
+  const translationError = document.getElementById("translationError");
 
-  // Toggle recording on record button click
+  // Helper function to handle API errors
+  const handleApiError = async (response, errorElement) => {
+    if (!response.ok) {
+      try {
+        const errorData = await response.json();
+        errorElement.textContent = errorData.error || 'Request failed';
+      } catch (e) {
+        errorElement.textContent = `HTTP Error: ${response.status}`;
+      }
+      throw new Error('API request failed');
+    }
+    return response.json();
+  };
+
+  // Toggle recording
   recordButton.addEventListener("click", async () => {
     if (!recording) {
-      // Start recording
-      recordedChunks = [];
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.start();
-      recording = true;
-      recordButton.textContent = "Stop Recording";
-      mediaRecorder.ondataavailable = e => {
-        if (e.data.size > 0) recordedChunks.push(e.data);
-      };
-      mediaRecorder.onstop = () => {
-        // Create a blob and set the audio playback source
-        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-        const audioURL = URL.createObjectURL(blob);
-        audioPlayback.src = audioURL;
-        // Upload audio to server for transcription
-        const formData = new FormData();
-        formData.append("audio_data", blob, "recording.webm");
-        fetch("/upload", {
-          method: "POST",
-          body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-          if (data.transcript) {
-            transcript = data.transcript;
-            transcriptText.textContent = transcript;
-          } else if(data.error) {
-            transcriptText.textContent = "Error: " + data.error;
+      try {
+        // Reset previous errors
+        recordingError.textContent = '';
+        
+        // Start recording
+        recordedChunks = [];
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.start();
+        recording = true;
+        recordButton.textContent = "Stop Recording";
+        recordingStatus.style.display = 'block';
+        
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) recordedChunks.push(e.data);
+        };
+        
+        mediaRecorder.onstop = async () => {
+          recordingStatus.style.display = 'none';
+          recording = false;
+          recordButton.textContent = "Record";
+          
+          // Create blob and set audio playback
+          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+          const audioURL = URL.createObjectURL(blob);
+          audioPlayback.src = audioURL;
+          
+          // Upload for transcription
+          uploadStatus.style.display = 'block';
+          transcriptText.textContent = '';
+          
+          try {
+            const formData = new FormData();
+            formData.append("audio_data", blob, "recording.webm");
+            
+            const response = await fetch("/upload", {
+              method: "POST",
+              body: formData
+            });
+            
+            const data = await handleApiError(response, recordingError);
+            
+            if (data.transcript) {
+              transcript = data.transcript;
+              transcriptText.textContent = transcript;
+            }
+          } catch (error) {
+            console.error("Upload error:", error);
+            if (!recordingError.textContent) {
+              recordingError.textContent = "Failed to process audio";
+            }
+          } finally {
+            uploadStatus.style.display = 'none';
           }
-        })
-        .catch(error => {
-          transcriptText.textContent = "Error: " + error;
-        });
-      };
+        };
+      } catch (error) {
+        console.error("Recording error:", error);
+        recordingError.textContent = "Microphone access denied or recording failed";
+        recordingStatus.style.display = 'none';
+        recording = false;
+        recordButton.textContent = "Record";
+      }
     } else {
       // Stop recording
       mediaRecorder.stop();
-      recording = false;
-      recordButton.textContent = "Record";
+      mediaRecorder.stream.getTracks().forEach(track => track.stop());
     }
   });
 
-  // Translate transcript on button click
-  translateButton.addEventListener("click", () => {
-    const targetLanguage = languageSelect.value;
-    fetch("/translate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: transcript, targetLanguage: targetLanguage })
-    })
-    .then(response => response.json())
-    .then(data => {
+  // Translation handler
+  translateButton.addEventListener("click", async () => {
+    if (!transcript) {
+      translationError.textContent = "Please record and transcribe first";
+      return;
+    }
+    
+    translationError.textContent = '';
+    translationStatus.style.display = 'block';
+    translatedText.textContent = '';
+    
+    try {
+      const targetLanguage = languageSelect.value;
+      const response = await fetch("/translate", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        body: JSON.stringify({ 
+          text: transcript, 
+          targetLanguage: targetLanguage 
+        })
+      });
+      
+      const data = await handleApiError(response, translationError);
+      
       if (data.translatedText) {
         translatedText.textContent = data.translatedText;
-      } else if(data.error) {
-        translatedText.textContent = "Error: " + data.error;
       }
-    })
-    .catch(error => {
-      translatedText.textContent = "Error: " + error;
-    });
+    } catch (error) {
+      console.error("Translation error:", error);
+      if (!translationError.textContent) {
+        translationError.textContent = "Translation failed";
+      }
+    } finally {
+      translationStatus.style.display = 'none';
+    }
   });
 
-  // Speak the translated text using SpeechSynthesis API
+  // Text-to-speech
   speakButton.addEventListener("click", () => {
     const text = translatedText.textContent;
     if (text) {
       const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = languageSelect.value === 'Spanish' ? 'es-ES' : 
+                      languageSelect.value === 'French' ? 'fr-FR' :
+                      // Add other language codes as needed
+                      'en-US';
       window.speechSynthesis.speak(utterance);
     }
   });
