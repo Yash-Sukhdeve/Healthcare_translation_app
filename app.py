@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, jsonify
 import openai
 import os
 import tempfile
-import mysecret as mysecret
 
 app = Flask(__name__)
 
