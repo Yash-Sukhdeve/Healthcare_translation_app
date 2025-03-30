@@ -2,12 +2,13 @@ from flask import Flask, render_template, request, jsonify
 import openai
 import os
 import tempfile
+import mysecret as mysecret
 
 app = Flask(__name__)
 openai_api_key = os.getenv('OPENAI_API_KEY')
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable not set")
-
+    openai_api_key = mysecret.OPENAI_API_KEY
 client = openai.OpenAI(api_key=openai_api_key)
 
 
