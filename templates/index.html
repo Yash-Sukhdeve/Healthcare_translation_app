@@ -51,6 +51,10 @@
       color: #dc3545;
       font-weight: 600;
     }
+    .success-message {
+      color: #28a745;
+      font-weight: 600;
+    }
     @media (max-width: 576px) {
       body {
         padding: 10px;
@@ -68,7 +72,7 @@
   <!-- Recording Section -->
   <div class="section text-center">
     <h3>Record Audio</h3>
-    <button id="recordButton" class="btn btn-primary btn-custom">Record</button>
+    <button id="recordButton" class="btn btn-primary btn-custom">Start Recording</button>
     <div id="recordingStatus" class="status-indicator">
       <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
       <span>Recording in progress...</span>
@@ -78,20 +82,21 @@
       <span>Processing audio...</span>
     </div>
     <div id="recordingError" class="error-message"></div>
+    <div id="recordingSuccess" class="success-message"></div>
     <br>
-    <audio id="audioPlayback" controls></audio>
+    <audio id="audioPlayback" controls style="display: none;"></audio>
   </div>
   
   <!-- Transcription Display -->
   <div class="section">
     <h5>Original Transcript:</h5>
-    <p id="transcriptText" class="border p-3 rounded"></p>
+    <p id="transcriptText" class="border p-3 rounded bg-light"></p>
   </div>
   
   <!-- Language Selection and Translation -->
   <div class="section text-center">
     <h3>Translate Transcript</h3>
-    <select id="languageSelect" class="form-select w-50 mx-auto">
+    <select id="languageSelect" class="form-select w-50 mx-auto mb-3">
       <option value="Spanish">Spanish</option>
       <option value="French">French</option>
       <option value="German">German</option>
@@ -104,8 +109,7 @@
       <option value="Arabic">Arabic</option>
       <option value="Korean">Korean</option>
     </select>
-    <br>
-    <button id="translateButton" class="btn btn-info btn-custom">Translate</button>
+    <button id="translateButton" class="btn btn-info btn-custom" disabled>Translate</button>
     <div id="translationStatus" class="status-indicator">
       <div class="spinner-border spinner-border-sm text-info" role="status"></div>
       <span>Translating...</span>
@@ -116,40 +120,55 @@
   <!-- Translated Transcript Display -->
   <div class="section">
     <h5>Translated Transcript:</h5>
-    <p id="translatedText" class="border p-3 rounded"></p>
+    <p id="translatedText" class="border p-3 rounded bg-light"></p>
     <div class="text-center">
-      <button id="speakButton" class="btn btn-success btn-custom">Speak</button>
+      <button id="speakButton" class="btn btn-success btn-custom" disabled>Speak Translation</button>
     </div>
   </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-  let mediaRecorder;
-  let recordedChunks = [];
-  let recording = false;
-  let transcript = "";
-
   // DOM Elements
-  const recordButton = document.getElementById("recordButton");
-  const audioPlayback = document.getElementById("audioPlayback");
-  const transcriptText = document.getElementById("transcriptText");
-  const translateButton = document.getElementById("translateButton");
-  const languageSelect = document.getElementById("languageSelect");
-  const translatedText = document.getElementById("translatedText");
-  const speakButton = document.getElementById("speakButton");
-  const recordingStatus = document.getElementById("recordingStatus");
-  const uploadStatus = document.getElementById("uploadStatus");
-  const translationStatus = document.getElementById("translationStatus");
-  const recordingError = document.getElementById("recordingError");
-  const translationError = document.getElementById("translationError");
+  const elements = {
+    recordButton: document.getElementById("recordButton"),
+    audioPlayback: document.getElementById("audioPlayback"),
+    transcriptText: document.getElementById("transcriptText"),
+    translateButton: document.getElementById("translateButton"),
+    languageSelect: document.getElementById("languageSelect"),
+    translatedText: document.getElementById("translatedText"),
+    speakButton: document.getElementById("speakButton"),
+    recordingStatus: document.getElementById("recordingStatus"),
+    uploadStatus: document.getElementById("uploadStatus"),
+    translationStatus: document.getElementById("translationStatus"),
+    recordingError: document.getElementById("recordingError"),
+    recordingSuccess: document.getElementById("recordingSuccess"),
+    translationError: document.getElementById("translationError")
+  };
 
-  // Helper function to handle API errors
+  // App State
+  let state = {
+    mediaRecorder: null,
+    recordedChunks: [],
+    isRecording: false,
+    transcript: "",
+    audioBlob: null
+  };
+
+  // Helper Functions
+  const showElement = (element) => element.style.display = 'block';
+  const hideElement = (element) => element.style.display = 'none';
+  const enableButton = (button) => button.disabled = false;
+  const disableButton = (button) => button.disabled = true;
+  const clearError = (element) => element.textContent = '';
+  const clearSuccess = (element) => element.textContent = '';
+
+  // API Error Handler
   const handleApiError = async (response, errorElement) => {
     if (!response.ok) {
       try {
         const errorData = await response.json();
-        errorElement.textContent = errorData.error || 'Request failed';
+        errorElement.textContent = errorData.error || errorData.details || 'Request failed';
       } catch (e) {
         errorElement.textContent = `HTTP Error: ${response.status}`;
       }
@@ -158,91 +177,112 @@
     return response.json();
   };
 
-  // Toggle recording
-  recordButton.addEventListener("click", async () => {
-    if (!recording) {
-      try {
-        // Reset previous errors
-        recordingError.textContent = '';
+  // Initialize Recording
+  const startRecording = async () => {
+    try {
+      // Reset UI
+      clearError(elements.recordingError);
+      clearSuccess(elements.recordingSuccess);
+      state.recordedChunks = [];
+      
+      // Get audio stream
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      state.mediaRecorder = new MediaRecorder(stream);
+      state.isRecording = true;
+      
+      // Update UI
+      elements.recordButton.textContent = "Stop Recording";
+      showElement(elements.recordingStatus);
+      disableButton(elements.translateButton);
+      disableButton(elements.speakButton);
+      
+      // Setup recording handlers
+      state.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) state.recordedChunks.push(e.data);
+      };
+      
+      state.mediaRecorder.onstop = () => {
+        // Create audio blob
+        state.audioBlob = new Blob(state.recordedChunks, { type: 'audio/webm' });
+        const audioURL = URL.createObjectURL(state.audioBlob);
+        elements.audioPlayback.src = audioURL;
+        elements.audioPlayback.style.display = 'block';
         
-        // Start recording
-        recordedChunks = [];
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        mediaRecorder.start();
-        recording = true;
-        recordButton.textContent = "Stop Recording";
-        recordingStatus.style.display = 'block';
-        
-        mediaRecorder.ondataavailable = e => {
-          if (e.data.size > 0) recordedChunks.push(e.data);
-        };
-        
-        mediaRecorder.onstop = async () => {
-          recordingStatus.style.display = 'none';
-          recording = false;
-          recordButton.textContent = "Record";
-          
-          // Create blob and set audio playback
-          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-          const audioURL = URL.createObjectURL(blob);
-          audioPlayback.src = audioURL;
-          
-          // Upload for transcription
-          uploadStatus.style.display = 'block';
-          transcriptText.textContent = '';
-          
-          try {
-            const formData = new FormData();
-            formData.append("audio_data", blob, "recording.webm");
-            
-            const response = await fetch("/upload", {
-              method: "POST",
-              body: formData
-            });
-            
-            const data = await handleApiError(response, recordingError);
-            
-            if (data.transcript) {
-              transcript = data.transcript;
-              transcriptText.textContent = transcript;
-            }
-          } catch (error) {
-            console.error("Upload error:", error);
-            if (!recordingError.textContent) {
-              recordingError.textContent = "Failed to process audio";
-            }
-          } finally {
-            uploadStatus.style.display = 'none';
-          }
-        };
-      } catch (error) {
-        console.error("Recording error:", error);
-        recordingError.textContent = "Microphone access denied or recording failed";
-        recordingStatus.style.display = 'none';
-        recording = false;
-        recordButton.textContent = "Record";
-      }
-    } else {
-      // Stop recording
-      mediaRecorder.stop();
-      mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        // Process recording
+        processRecording();
+      };
+      
+      state.mediaRecorder.start();
+      
+    } catch (error) {
+      console.error("Recording initialization error:", error);
+      elements.recordingError.textContent = "Microphone access denied. Please check permissions.";
+      resetRecordingState();
     }
-  });
+  };
 
-  // Translation handler
-  translateButton.addEventListener("click", async () => {
-    if (!transcript) {
-      translationError.textContent = "Please record and transcribe first";
+  // Process Recording
+  const processRecording = async () => {
+    hideElement(elements.recordingStatus);
+    showElement(elements.uploadStatus);
+    elements.transcriptText.textContent = '';
+    
+    try {
+      const formData = new FormData();
+      formData.append("audio_data", state.audioBlob, "recording.webm");
+      
+      const response = await fetch("/upload", {
+        method: "POST",
+        body: formData
+      });
+      
+      const data = await handleApiError(response, elements.recordingError);
+      
+      if (data.transcript) {
+        state.transcript = data.transcript;
+        elements.transcriptText.textContent = state.transcript;
+        elements.recordingSuccess.textContent = "Recording processed successfully!";
+        enableButton(elements.translateButton);
+      }
+    } catch (error) {
+      console.error("Upload processing error:", error);
+      if (!elements.recordingError.textContent) {
+        elements.recordingError.textContent = "Failed to process audio recording";
+      }
+    } finally {
+      hideElement(elements.uploadStatus);
+      resetRecordingState();
+    }
+  };
+
+  // Stop Recording
+  const stopRecording = () => {
+    if (state.mediaRecorder && state.isRecording) {
+      state.mediaRecorder.stop();
+      state.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  // Reset Recording State
+  const resetRecordingState = () => {
+    state.isRecording = false;
+    elements.recordButton.textContent = "Start Recording";
+  };
+
+  // Handle Translation
+  const handleTranslation = async () => {
+    if (!state.transcript) {
+      elements.translationError.textContent = "Please record and transcribe first";
       return;
     }
     
-    translationError.textContent = '';
-    translationStatus.style.display = 'block';
-    translatedText.textContent = '';
+    clearError(elements.translationError);
+    showElement(elements.translationStatus);
+    elements.translatedText.textContent = '';
+    disableButton(elements.speakButton);
     
     try {
-      const targetLanguage = languageSelect.value;
+      const targetLanguage = elements.languageSelect.value;
       const response = await fetch("/translate", {
         method: "POST",
         headers: { 
@@ -250,38 +290,64 @@
           "Accept": "application/json"
         },
         body: JSON.stringify({ 
-          text: transcript, 
+          text: state.transcript, 
           targetLanguage: targetLanguage 
         })
       });
       
-      const data = await handleApiError(response, translationError);
+      const data = await handleApiError(response, elements.translationError);
       
       if (data.translatedText) {
-        translatedText.textContent = data.translatedText;
+        elements.translatedText.textContent = data.translatedText;
+        enableButton(elements.speakButton);
       }
     } catch (error) {
       console.error("Translation error:", error);
-      if (!translationError.textContent) {
-        translationError.textContent = "Translation failed";
+      if (!elements.translationError.textContent) {
+        elements.translationError.textContent = "Translation service unavailable";
       }
     } finally {
-      translationStatus.style.display = 'none';
+      hideElement(elements.translationStatus);
     }
-  });
+  };
 
-  // Text-to-speech
-  speakButton.addEventListener("click", () => {
-    const text = translatedText.textContent;
+  // Handle Text-to-Speech
+  const handleTextToSpeech = () => {
+    const text = elements.translatedText.textContent;
     if (text) {
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = languageSelect.value === 'Spanish' ? 'es-ES' : 
-                      languageSelect.value === 'French' ? 'fr-FR' :
-                      // Add other language codes as needed
-                      'en-US';
+      
+      // Map language selection to speech synthesis language codes
+      const languageMap = {
+        'Spanish': 'es-ES',
+        'French': 'fr-FR',
+        'German': 'de-DE',
+        'Chinese': 'zh-CN',
+        'Japanese': 'ja-JP',
+        'Hindi': 'hi-IN',
+        'Russian': 'ru-RU',
+        'Portuguese': 'pt-PT',
+        'Italian': 'it-IT',
+        'Arabic': 'ar-SA',
+        'Korean': 'ko-KR'
+      };
+      
+      utterance.lang = languageMap[elements.languageSelect.value] || 'en-US';
       window.speechSynthesis.speak(utterance);
     }
+  };
+
+  // Event Listeners
+  elements.recordButton.addEventListener("click", () => {
+    state.isRecording ? stopRecording() : startRecording();
   });
+
+  elements.translateButton.addEventListener("click", handleTranslation);
+  elements.speakButton.addEventListener("click", handleTextToSpeech);
+
+  // Initialize UI
+  disableButton(elements.translateButton);
+  disableButton(elements.speakButton);
 </script>
 </body>
 </html>
