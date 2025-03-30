@@ -7,7 +7,7 @@ import mysecret as mysecret
 app = Flask(__name__)
 
 # Create the OpenAI client using your secret API key.
-client = openai.OpenAI(api_key=mysecret.OPENAI_API_KEY)
+client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 def medical_transcription(audio_file_path: str) -> str:
     """
