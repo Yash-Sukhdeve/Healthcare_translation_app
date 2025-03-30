@@ -2,60 +2,60 @@ from flask import Flask, render_template, request, jsonify
 import openai
 import os
 import tempfile
+import mysecret as mysecret
 
 app = Flask(__name__)
 
-print(os.getenv("OPENAI_API_KEY"))
-
-# Set your OpenAI API key (ensure this is set in your environment)
-openai.api_key = os.environ.get("OPENAI_API_KEY")
+# Create the OpenAI client using your secret API key.
+client = openai.OpenAI(api_key=mysecret.OPENAI_API_KEY)
 
 def medical_transcription(audio_file_path: str) -> str:
     """
-    Transcribes an audio file using OpenAI's Whisper API and then refines the transcript
-    to ensure accurate transcription of medical terminology.
+    Transcribes an audio file using OpenAI's Whisper API (gpt-4o-transcribe) 
+    and refines the transcript for medical accuracy.
     """
-    # Step 1: Transcribe audio using Whisper API
+    # Step 1: Transcribe audio using the Whisper API
     with open(audio_file_path, "rb") as audio_file:
-        transcript_response = openai.audio.transcriptions.create(
-            model="whisper-1",
+        transcription = client.audio.transcriptions.create(
+            model="gpt-4o-transcribe",
             file=audio_file
         )
+    raw_transcript = transcription.text
 
-    raw_transcript = transcript_response.text
-
-    # Step 2: Refine the transcript with a custom prompt
+    # Step 2: Refine the transcript with a chat prompt
     prompt = (
         "Please refine the following transcript for accuracy, "
         "especially ensuring that any medical terminology is correct, "
         "and fix any transcription errors:\n\n" + raw_transcript
     )
 
-    refinement_response = openai.completions.create(
-        model="text-davinci-003",
-        prompt=prompt,
-        max_tokens=150,
+    refinement_response = client.chat.completions.create(
+        model="gpt-3.5-turbo",  # or another suitable chat model
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4000,
         temperature=0.3,
         n=1
     )
 
-    refined_transcript = refinement_response.choices[0].text.strip()
+    refined_transcript = refinement_response.choices[0].message.content.strip()
     return refined_transcript
 
 def translate_text(text: str, target_language: str) -> str:
     """
-    Translates the given text into the target language using a prompt-based approach.
+    Translates the given text into the target language using a chat-based approach.
     """
-    prompt = f"Translate the following text into {target_language}: {text}"
-    translation_response = openai.Completion.create(
-        model="text-davinci-003",
-        prompt=prompt,
-        max_tokens=100,
-        temperature=0.5,
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": f"Translate the following text into {target_language}:"},
+            {"role": "user", "content": text}
+        ],
+        temperature=0.3,
+        max_tokens=500,
         n=1
     )
-    translated_text = translation_response.choices[0].text.strip()
-    return translated_text
+    translation = response.choices[0].message.content.strip()
+    return translation
 
 @app.route('/')
 def index():
@@ -65,27 +65,21 @@ def index():
 def upload():
     """
     Receives the recorded audio file from the front end, saves it temporarily,
-    and returns the refined transcript as JSON.
+    transcribes and refines it, and returns the refined transcript as JSON.
     """
     if "audio_data" not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
 
     audio_file = request.files["audio_data"]
-    
-    # Create a temporary file using mkstemp.
     fd, temp_path = tempfile.mkstemp(suffix=".webm")
     try:
-        # Write the audio data to the temporary file and close the file descriptor.
         with os.fdopen(fd, 'wb') as f:
             f.write(audio_file.read())
-        
-        # Now call your transcription function with the temporary file path.
         transcript = medical_transcription(temp_path)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
         try:
-            # Optionally, add a small delay to ensure the OS releases the file.
             import time
             time.sleep(0.1)
             os.remove(temp_path)
@@ -93,13 +87,11 @@ def upload():
             print("Error removing temporary file:", remove_error)
     return jsonify({"transcript": transcript})
 
-
-
 @app.route('/translate', methods=["POST"])
 def translate():
     """
     Receives a JSON payload containing the transcript and target language,
-    calls the translation function, and returns the translated text.
+    translates the transcript, and returns the translated text.
     """
     data = request.get_json()
     text = data.get("text", "")
@@ -114,3 +106,4 @@ def translate():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
