@@ -1,32 +1,25 @@
-  {
-  "version": 2,
-  "builds": [
-    {
-      "src": "app.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "15mb",
-        "runtime": "python3.9"
+{
+    "version": 2,
+    "builds": [
+      {
+        "src": "app.py",
+        "use": "@vercel/python",
+        "config": {
+          "maxLambdaSize": "15mb",
+          "runtime": "python3.9",
+          "includeFiles": ["templates/**", "static/**"]
+        }
       }
-    },
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/",
-      "dest": "index.html"
-    },
-    {
-      "src": "/upload",
-      "dest": "app.py"
-    },
-    {
-      "src": "/translate",
-      "dest": "app.py"
-    }
-  ]
-}
-  
+    ],
+    "routes": [
+      {
+        "src": "/static/(.*)",
+        "dest": "/static/$1"
+      },
+      {
+        "src": "/(.*)",
+        "dest": "app.py",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+      }
+    ]
+  }
