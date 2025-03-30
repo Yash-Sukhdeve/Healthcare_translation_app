@@ -50,7 +50,6 @@ def medical_transcription(audio_file_path: str) -> str:
     except Exception as e:
         logger.error(f"Transcription error: {str(e)}")
         raise
-
 def translate_text(text: str, target_language: str) -> str:
     """Translate text to target language"""
     try:
@@ -84,24 +83,44 @@ def upload():
     if audio_file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
+    temp_path = None
     try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        temp_path = f"{tempfile.gettempdir()}/audio_{timestamp}.webm"
+        # Create secure temp file
+        fd, temp_path = tempfile.mkstemp(suffix='.webm')
+        os.close(fd)
+        
+        # Save audio file
         audio_file.save(temp_path)
         
+        # Verify file was saved
+        if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+            return jsonify({"error": "Empty audio file received"}), 400
+            
+        # Process transcription
         transcript = medical_transcription(temp_path)
         return jsonify({
             "transcript": transcript,
             "status": "success"
         })
+        
+    except openai.APIError as e:
+        logger.error(f"OpenAI API error: {str(e)}")
+        return jsonify({
+            "error": "OpenAI service unavailable",
+            "details": str(e)
+        }), 503
     except Exception as e:
+        logger.error(f"Processing error: {str(e)}")
         return jsonify({
             "error": "Audio processing failed",
             "details": str(e)
         }), 500
     finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                logger.error(f"Error removing temp file: {str(e)}")
 
 @app.route('/translate', methods=["POST"])
 def translate():
