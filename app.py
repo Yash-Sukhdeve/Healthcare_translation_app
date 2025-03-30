@@ -6,9 +6,13 @@ import mysecret as mysecret
 
 app = Flask(__name__)
 openai_api_key = os.getenv('OPENAI_API_KEY')
-if not openai_api_key:
-    raise ValueError("OPENAI_API_KEY environment variable not set")
+try:
+    if not openai_api_key:
+        raise ValueError("OPENAI_API_KEY environment variable not set")
+except Exception as e:
     openai_api_key = mysecret.OPENAI_API_KEY
+    print(e)
+    
 client = openai.OpenAI(api_key=openai_api_key)
 
 
