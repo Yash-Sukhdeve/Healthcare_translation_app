@@ -13,13 +13,18 @@
     ],
     "routes": [
       {
-        "src": "/static/(.*)",
-        "dest": "/static/$1"
+        "src": "/upload",
+        "dest": "app.py",
+        "methods": ["POST"]
+      },
+      {
+        "src": "/translate",
+        "dest": "app.py",
+        "methods": ["POST"]
       },
       {
         "src": "/(.*)",
-        "dest": "app.py",
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        "dest": "app.py"
       }
     ]
   }
