@@ -4,6 +4,7 @@ import os
 import tempfile
 
 app = Flask(__name__)
+
 print(os.getenv("OPENAI_API_KEY"))
 
 # Set your OpenAI API key (ensure this is set in your environment)
