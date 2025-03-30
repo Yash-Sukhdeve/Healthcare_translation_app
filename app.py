@@ -4,9 +4,12 @@ import os
 import tempfile
 
 app = Flask(__name__)
+openai_api_key = os.getenv('OPENAI_API_KEY')
+if not openai_api_key:
+    raise ValueError("OPENAI_API_KEY environment variable not set")
 
-# Create the OpenAI client using your secret API key.
-client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+client = openai.OpenAI(api_key=openai_api_key)
+
 
 def medical_transcription(audio_file_path: str) -> str:
     """
