@@ -4,6 +4,7 @@ import os
 import tempfile
 
 app = Flask(__name__)
+print(os.getenv("OPENAI_API_KEY"))
 
 # Set your OpenAI API key (ensure this is set in your environment)
 openai.api_key = os.environ.get("OPENAI_API_KEY")
@@ -11,27 +12,32 @@ openai.api_key = os.environ.get("OPENAI_API_KEY")
 def medical_transcription(audio_file_path: str) -> str:
     """
     Transcribes an audio file using OpenAI's Whisper API and then refines the transcript
-    for accuracy with an emphasis on correct medical terminology.
+    to ensure accurate transcription of medical terminology.
     """
-    # Step 1: Transcribe using Whisper API
+    # Step 1: Transcribe audio using Whisper API
     with open(audio_file_path, "rb") as audio_file:
-        transcript_response = openai.Audio.transcribe("whisper-1", audio_file)
-    raw_transcript = transcript_response.get("text", "")
-    
+        transcript_response = openai.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
+
+    raw_transcript = transcript_response.text
+
     # Step 2: Refine the transcript with a custom prompt
     prompt = (
         "Please refine the following transcript for accuracy, "
         "especially ensuring that any medical terminology is correct, "
         "and fix any transcription errors:\n\n" + raw_transcript
     )
-    
-    refinement_response = openai.Completion.create(
+
+    refinement_response = openai.completions.create(
         model="text-davinci-003",
         prompt=prompt,
         max_tokens=150,
         temperature=0.3,
         n=1
     )
+
     refined_transcript = refinement_response.choices[0].text.strip()
     return refined_transcript
 
