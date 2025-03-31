@@ -8,16 +8,6 @@
     ],
     "routes": [
       {
-        "src": "/upload",
-        "dest": "app.py",
-        "methods": ["POST"]
-      },
-      {
-        "src": "/translate",
-        "dest": "app.py",
-        "methods": ["POST"]
-      },
-      {
         "src": "/(.*)",
         "dest": "app.py"
       }
